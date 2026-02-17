@@ -12,7 +12,6 @@ struct RechargeHubView: View {
     enum RechargeGame: String, CaseIterable, Identifiable {
         case memoryFlip
         case codeSnake
-        case bugSquash
         
         var id: String { rawValue }
         
@@ -20,7 +19,6 @@ struct RechargeHubView: View {
             switch self {
             case .memoryFlip: return "Memory Flip"
             case .codeSnake:  return "Code Snake"
-            case .bugSquash:  return "Bug Squash"
             }
         }
         
@@ -28,7 +26,6 @@ struct RechargeHubView: View {
             switch self {
             case .memoryFlip: return "🃏"
             case .codeSnake:  return "🐍"
-            case .bugSquash:  return "🎯"
             }
         }
         
@@ -36,7 +33,6 @@ struct RechargeHubView: View {
             switch self {
             case .memoryFlip: return "Match dev emoji pairs"
             case .codeSnake:  return "Collect brackets, avoid walls"
-            case .bugSquash:  return "Tap bugs before they escape"
             }
         }
         
@@ -44,7 +40,6 @@ struct RechargeHubView: View {
             switch self {
             case .memoryFlip: return "🧘 Calm"
             case .codeSnake:  return "🎮 Chill"
-            case .bugSquash:  return "⚡ Quick"
             }
         }
         
@@ -52,47 +47,44 @@ struct RechargeHubView: View {
             switch self {
             case .memoryFlip: return Color.electricCyan
             case .codeSnake:  return Color.toxicLime
-            case .bugSquash:  return Color.ballisticOrange
             }
         }
     }
     
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.voidBlack.ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 20) {
-                        // Header
-                        headerSection
-                        
-                        // Burnout indicator
-                        if let hero = hero, hero.burnoutLevel > 0.1 {
-                            burnoutBanner(level: hero.burnoutLevel)
-                        }
-                        
-                        // Game Cards
-                        VStack(spacing: 12) {
-                            ForEach(RechargeGame.allCases) { game in
-                                NavigationLink(destination: destinationView(for: game)) {
-                                    gameCard(game)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.horizontal)
-                        
-                        // Footer tip
-                        footerTip
+        ZStack {
+            Color.voidBlack.ignoresSafeArea()
+            
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Header
+                    headerSection
+                    
+                    // Burnout indicator
+                    if let hero = hero, hero.burnoutLevel > 0.1 {
+                        burnoutBanner(level: hero.burnoutLevel)
                     }
-                    .padding(.bottom, 30)
+                    
+                    // Game Cards
+                    VStack(spacing: 12) {
+                        ForEach(RechargeGame.allCases) { game in
+                            NavigationLink(destination: destinationView(for: game)) {
+                                gameCard(game)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal)
+                    
+                    // Footer tip
+                    footerTip
                 }
+                .padding(.bottom, 30)
             }
-            .navigationTitle("Recharge")
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
         }
+        .navigationTitle("Recharge")
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
     }
     
     // MARK: - Header
@@ -142,6 +134,8 @@ struct RechargeHubView: View {
         .background(Color.carbonGrey.opacity(0.4))
         .cornerRadius(14)
         .padding(.horizontal)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Burnout level: \(Int(level * 100)) percent. Playing games reduces burnout.")
     }
     
     // MARK: - Game Card
@@ -188,6 +182,9 @@ struct RechargeHubView: View {
             RoundedRectangle(cornerRadius: 16)
                 .stroke(game.color.opacity(0.08), lineWidth: 1)
         )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(game.title): \(game.subtitle). Vibe: \(game.vibe)")
+        .accessibilityAddTraits(.isButton)
     }
     
     // MARK: - Destination
@@ -196,7 +193,6 @@ struct RechargeHubView: View {
         switch game {
         case .memoryFlip: MemoryGameView()
         case .codeSnake:  CodeSnakeView()
-        case .bugSquash:  BugSquashView()
         }
     }
     

@@ -7,6 +7,7 @@ struct DashboardView: View {
     @Query(filter: #Predicate<Quest> { $0.isCompleted }) private var completedQuests: [Quest]
     @Query(sort: \Session.date, order: .forward) private var sessions: [Session]
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     @State private var showHistory = false
     @State private var showAbout = false
@@ -44,7 +45,7 @@ struct DashboardView: View {
                         // 2. High-Priority Alert: Burnout Monitor
                         if hero.totalFocusMinutes > 240 {
                             BurnoutWarningCard()
-                                .transition(.move(edge: .top).combined(with: .opacity))
+                                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                         }
                         
                         // 3. Core Stats: Nanobytes & Focus
@@ -52,22 +53,26 @@ struct DashboardView: View {
                             StatBlock(title: "TODAY'S FOCUS", value: "\(focusTimeToday.minutes)m \(focusTimeToday.seconds)s", icon: "timer", color: .electricCyan)
                                 .onTapGesture { showHistory = true }
                                 .accessibilityLabel("Today's focus: \(focusTimeToday.minutes) minutes \(focusTimeToday.seconds) seconds")
-                                .accessibilityHint("Tap to view focus history chart")
+                                .accessibilityHint("Double tap to view focus history chart")
+                                .accessibilityAddTraits(.isButton)
                             StatBlock(title: "NANOBYTES", value: "\(hero.nanobytes)", icon: "cpu", color: .toxicLime)
                                 .accessibilityLabel("\(hero.nanobytes) nanobytes earned")
                         }
                         .padding(.horizontal)
                         
-                        // 4. Completed Quest Timeline (Git Graph)
+                        // 4. 7-Day Focus Trend (Swift Charts showcase)
+                        focusTrendChart
+                        
+                        // 5. Completed Quest Timeline (Git Graph)
                         if !completedQuests.isEmpty {
                             QuestTimelineView(quests: completedQuests.sorted { $0.createdAt > $1.createdAt })
                                 .padding(.horizontal)
                         }
                         
-                        // 5. Vitality Analysis: Debt vs. Development
+                        // 6. Vitality Analysis: Debt vs. Development
                         vitalityChartSection
                         
-                        // 6. XP Integrity Metric
+                        // 7. XP Integrity Metric
                         xpIntegrityCard
                     }
                     .padding(.top)
@@ -138,12 +143,11 @@ struct DashboardView: View {
                 Text("SYSTEM ARCHITECT STATUS")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.ashGrey)
-                Text("Hi, \(hero.name.isEmpty ? "Architect" : hero.name)") // Personalization
+                Text("Hi, \(hero.name.isEmpty ? "Architect" : hero.name)")
                     .font(.largeTitle.bold())
                     .foregroundStyle(.white)
             }
             Spacer()
-            // Avatar with Level Glow
             ZStack {
                 Circle()
                     .stroke(hero.totalFocusMinutes > 240 ? Color.alertRed : Color.toxicLime, lineWidth: 2)
@@ -153,8 +157,135 @@ struct DashboardView: View {
                     .frame(width: 46, height: 46)
                     .foregroundStyle(Color.smokeWhite)
             }
+            .accessibilityHidden(true)
         }
         .padding(.horizontal)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Welcome \(hero.name.isEmpty ? "Architect" : hero.name), Level \(hero.level) System Architect")
+    }
+    
+    // MARK: - 7-Day Focus Trend (Swift Charts — Area + Line + RuleMark)
+    
+    private var last7DaysSessions: [(date: Date, minutes: Double)] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        return (0..<7).reversed().map { daysAgo in
+            guard let day = calendar.date(byAdding: .day, value: -daysAgo, to: today) else {
+                return (date: today, minutes: 0)
+            }
+            let dayEnd = calendar.date(byAdding: .day, value: 1, to: day) ?? day
+            let daySessions = sessions.filter { $0.date >= day && $0.date < dayEnd }
+            let totalMinutes = daySessions.reduce(0.0) { $0 + $1.duration } / 60.0
+            return (date: day, minutes: totalMinutes)
+        }
+    }
+    
+    private var dailyAverage: Double {
+        let data = last7DaysSessions
+        guard !data.isEmpty else { return 0 }
+        return data.reduce(0) { $0 + $1.minutes } / Double(data.count)
+    }
+    
+    private var focusTrendChart: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("FOCUS TREND", systemImage: "chart.xyaxis.line")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.ashGrey)
+                Spacer()
+                Text("7 Days")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.electricCyan)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.electricCyan.opacity(0.1))
+                    .cornerRadius(6)
+            }
+            
+            Chart {
+                ForEach(last7DaysSessions, id: \.date) { data in
+                    // Area fill under the line
+                    AreaMark(
+                        x: .value("Day", data.date, unit: .day),
+                        y: .value("Minutes", data.minutes)
+                    )
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color.electricCyan.opacity(0.3), Color.electricCyan.opacity(0.02)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .interpolationMethod(.catmullRom)
+                    
+                    // Line on top
+                    LineMark(
+                        x: .value("Day", data.date, unit: .day),
+                        y: .value("Minutes", data.minutes)
+                    )
+                    .foregroundStyle(Color.electricCyan)
+                    .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .interpolationMethod(.catmullRom)
+                    
+                    // Point annotations
+                    PointMark(
+                        x: .value("Day", data.date, unit: .day),
+                        y: .value("Minutes", data.minutes)
+                    )
+                    .foregroundStyle(Color.electricCyan)
+                    .symbolSize(data.minutes > 0 ? 30 : 0)
+                    .annotation(position: .top, spacing: 4) {
+                        if data.minutes > 0 {
+                            Text("\(Int(data.minutes))m")
+                                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color.electricCyan)
+                        }
+                    }
+                }
+                
+                // Daily average RuleMark
+                if dailyAverage > 0 {
+                    RuleMark(y: .value("Average", dailyAverage))
+                        .foregroundStyle(Color.toxicLime.opacity(0.5))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [5, 3]))
+                        .annotation(position: .trailing, alignment: .trailing) {
+                            Text("Avg: \(Int(dailyAverage))m")
+                                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color.toxicLime)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(Color.toxicLime.opacity(0.1))
+                                .cornerRadius(4)
+                        }
+                }
+            }
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .day)) { _ in
+                    AxisValueLabel(format: .dateTime.weekday(.abbreviated))
+                        .foregroundStyle(Color.ashGrey)
+                }
+            }
+            .chartYAxis {
+                AxisMarks { value in
+                    AxisValueLabel()
+                        .foregroundStyle(Color.ashGrey)
+                    AxisGridLine()
+                        .foregroundStyle(Color.white.opacity(0.06))
+                }
+            }
+            .chartPlotStyle { plotArea in
+                plotArea.background(Color.clear)
+            }
+            .frame(height: 200)
+        }
+        .padding()
+        .background(Color.carbonGrey.opacity(0.5))
+        .cornerRadius(24)
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.05), lineWidth: 1))
+        .padding(.horizontal)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Focus trend chart for the last 7 days. Daily average: \(Int(dailyAverage)) minutes.")
     }
     
     private var vitalityChartSection: some View {
@@ -176,6 +307,11 @@ struct DashboardView: View {
                 )
                 .foregroundStyle(Color.electricCyan.gradient)
                 .cornerRadius(6)
+                .annotation(position: .top, spacing: 4) {
+                    Text("\(standardModules)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.electricCyan)
+                }
                 
                 BarMark(
                     x: .value("Metric", "Debt Resolved"),
@@ -183,8 +319,21 @@ struct DashboardView: View {
                 )
                 .foregroundStyle(Color.alertRed.gradient)
                 .cornerRadius(6)
+                .annotation(position: .top, spacing: 4) {
+                    Text("\(debtResolved)")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.alertRed)
+                }
             }
             .frame(height: 180)
+            .chartYAxis {
+                AxisMarks { value in
+                    AxisValueLabel()
+                        .foregroundStyle(Color.ashGrey)
+                    AxisGridLine()
+                        .foregroundStyle(Color.white.opacity(0.06))
+                }
+            }
             .chartYAxisLabel("Modules")
             
             Text("Resolving Technical Debt grants 2x XP and increases System Integrity.")
@@ -196,6 +345,8 @@ struct DashboardView: View {
         .cornerRadius(24)
         .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.05), lineWidth: 1))
         .padding(.horizontal)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Vitality analysis: \(standardModules) standard modules completed, \(debtResolved) debt modules resolved")
     }
     
     private var xpIntegrityCard: some View {
@@ -218,6 +369,7 @@ struct DashboardView: View {
                 }
             }
             .frame(height: 8)
+            .accessibilityHidden(true)
             
             Text("\(hero.currentXP) / \(hero.maxXP) XP to Next Optimization")
                 .font(.caption2)
@@ -227,6 +379,8 @@ struct DashboardView: View {
         .background(Color.carbonGrey)
         .cornerRadius(20)
         .padding(.horizontal)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("System integrity: \(hero.currentXP) of \(hero.maxXP) XP, \(Int((Double(hero.currentXP) / Double(hero.maxXP)) * 100)) percent to next optimization")
     }
 }
 
@@ -243,6 +397,7 @@ struct StatBlock: View {
             Image(systemName: icon)
                 .foregroundStyle(color)
                 .font(.title3)
+                .accessibilityHidden(true)
             
             Text(value)
                 .font(.system(.title2, design: .monospaced)).bold()
@@ -261,6 +416,8 @@ struct StatBlock: View {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(Color.white.opacity(0.05), lineWidth: 1)
         )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title): \(value)")
     }
 }
 
@@ -270,6 +427,7 @@ struct BurnoutWarningCard: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.title2)
                 .foregroundStyle(.black)
+                .accessibilityHidden(true)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text("BURNOUT THRESHOLD DETECTED")
@@ -285,6 +443,9 @@ struct BurnoutWarningCard: View {
         .background(Color.ballisticOrange)
         .cornerRadius(16)
         .padding(.horizontal)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Warning: Burnout threshold detected. System recommends taking a break.")
+        .accessibilityAddTraits(.isStaticText)
     }
 }
 
@@ -333,6 +494,8 @@ struct FocusHistoryView: View {
                     .background(Color.carbonGrey.opacity(0.3))
                     .cornerRadius(16)
                     .padding(.horizontal)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Focus velocity chart showing \(groupedSessions.count) days of data. Total: \(Int(groupedSessions.reduce(0) { $0 + $1.minutes })) minutes")
                     
                     Spacer()
                 }

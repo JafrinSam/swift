@@ -1,14 +1,23 @@
 import SwiftUI
 import SwiftData
+import AVFoundation
 
 struct BattleView: View {
     @Query private var heroes: [Hero]
     @Query(filter: #Predicate<Quest> { $0.isActive && !$0.isCompleted }) private var activeQuests: [Quest]
     @Query(filter: #Predicate<Quest> { $0.isCompleted }, sort: \.createdAt, order: .reverse) private var completedQuests: [Quest]
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     @State private var showCompletionAlert = false
     @State private var timerPulse = false
+    
+    // Overtime detection
+    @AppStorage("focusDuration") private var focusDuration: Int = 25
+    @AppStorage("selectedSoundID") private var selectedSoundID: Int = 1005
+    @State private var showOvertimeAlert = false
+    @State private var overtimeAlertShown = false // one-time per session
+    @State private var showRechargeFromOvertime = false
     
     var hero: Hero { heroes.first ?? Hero() }
     var activeQuest: Quest? { activeQuests.first }
@@ -75,6 +84,25 @@ struct BattleView: View {
                 try? modelContext.save()
             }
         }
+        // MARK: - Overtime Alert Popup
+        .overlay {
+            if showOvertimeAlert {
+                overtimeAlertOverlay
+            }
+        }
+        .fullScreenCover(isPresented: $showRechargeFromOvertime) {
+            NavigationStack {
+                RechargeHubView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button { showRechargeFromOvertime = false } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(Color.ashGrey)
+                            }
+                        }
+                    }
+            }
+        }
     }
     
     // MARK: - Complete Mission Logic
@@ -125,8 +153,9 @@ struct BattleView: View {
             .blur(radius: 100)
             .offset(y: -100)
             .scaleEffect(timerPulse ? 1.15 : 1.0)
-            .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true), value: timerPulse)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 1.5).repeatForever(autoreverses: true), value: timerPulse)
             .onAppear { timerPulse = true }
+            .accessibilityHidden(true)
     }
     
     private var headerView: some View {
@@ -179,54 +208,88 @@ struct BattleView: View {
         VStack {
             Spacer()
             if let quest = activeQuest {
-                HStack(spacing: 16) {
-                    VStack(alignment: .leading) {
-                        if quest.isTimerActive {
-                            LiveQuestTimer(quest: quest)
-                        } else {
-                            Text("STANDING BY")
-                                .font(.caption2.bold())
-                                .foregroundStyle(Color.ashGrey)
-                        }
-                        Text(quest.title)
-                            .font(.subheadline.bold())
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                    }
-                    Spacer()
+                TimelineView(.periodic(from: .now, by: 1.0)) { context in
+                    let elapsed = questElapsed(quest, at: context.date)
+                    let limitSeconds = TimeInterval(focusDuration * 60)
+                    let isOvertime = quest.isTimerActive && elapsed > limitSeconds
+                    let overtimeSeconds = max(0, elapsed - limitSeconds)
                     
-                    // Animated timer button
-                    Button { toggleTimer(quest) } label: {
-                        ZStack {
-                            // Pulse ring when active
-                            if quest.isTimerActive {
-                                Circle()
-                                    .stroke(Color.toxicLime.opacity(0.3), lineWidth: 2)
-                                    .frame(width: 62, height: 62)
-                                    .scaleEffect(timerPulse ? 1.3 : 1.0)
-                                    .opacity(timerPulse ? 0 : 0.6)
+                    VStack(spacing: 0) {
+                        // Overtime warning banner
+                        if isOvertime {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.caption2)
+                                Text("OVERTIME +\(formatOvertimeShort(overtimeSeconds))")
+                                    .font(.system(size: 10, weight: .black, design: .monospaced))
                             }
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(Color.alertRed)
+                            .clipShape(UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 12))
+                        }
+                        
+                        HStack(spacing: 16) {
+                            VStack(alignment: .leading) {
+                                if quest.isTimerActive {
+                                    LiveQuestTimer(quest: quest)
+                                        .foregroundStyle(isOvertime ? Color.alertRed : Color.toxicLime)
+                                } else {
+                                    Text("STANDING BY")
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(Color.ashGrey)
+                                }
+                                Text(quest.title)
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
                             
-                            Image(systemName: quest.isTimerActive ? "pause.fill" : "play.fill")
-                                .font(.title2).foregroundStyle(.black)
-                                .frame(width: 56, height: 56)
-                                .background(
-                                    quest.isTimerActive
-                                    ? (quest.isBoss ? Color.alertRed : Color.toxicLime)
-                                    : Color.white
-                                )
-                                .clipShape(Circle())
+                            Button { toggleTimer(quest) } label: {
+                                ZStack {
+                                    if quest.isTimerActive {
+                                        Circle()
+                                            .stroke((isOvertime ? Color.alertRed : Color.toxicLime).opacity(0.3), lineWidth: 2)
+                                            .frame(width: 62, height: 62)
+                                            .scaleEffect(timerPulse ? 1.3 : 1.0)
+                                            .opacity(timerPulse ? 0 : 0.6)
+                                    }
+                                    
+                                    Image(systemName: quest.isTimerActive ? "pause.fill" : "play.fill")
+                                        .font(.title2).foregroundStyle(.black)
+                                        .frame(width: 56, height: 56)
+                                        .background(
+                                            quest.isTimerActive
+                                            ? (isOvertime ? Color.alertRed : (quest.isBoss ? Color.alertRed : Color.toxicLime))
+                                            : Color.white
+                                        )
+                                        .clipShape(Circle())
+                                }
+                            }
+                            .accessibilityLabel(quest.isTimerActive ? "Pause timer" : "Start timer")
+                            .accessibilityHint(quest.isTimerActive ? "Pauses the active mission timer" : "Starts the mission timer")
+                        }
+                        .padding(16)
+                        .background(
+                            (isOvertime ? Color.alertRed.opacity(0.15) : Color.carbonGrey.opacity(0.95))
+                        )
+                        .clipShape(UnevenRoundedRectangle(topLeadingRadius: isOvertime ? 0 : 24, bottomLeadingRadius: 12, bottomTrailingRadius: 12, topTrailingRadius: isOvertime ? 0 : 24))
+                    }
+                    .cornerRadius(isOvertime ? 16 : 24)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: isOvertime ? 16 : 24)
+                            .stroke(isOvertime ? Color.alertRed.opacity(0.4) : Color.clear, lineWidth: isOvertime ? 1 : 0)
+                    )
+                    .padding(.horizontal).padding(.bottom, 20)
+                    .onChange(of: isOvertime) { _, newValue in
+                        if newValue && !overtimeAlertShown {
+                            triggerOvertimeAlert()
                         }
                     }
-                    .accessibilityLabel(quest.isTimerActive ? "Pause timer" : "Start timer")
-                    .accessibilityHint(quest.isTimerActive ? "Pauses the active mission timer" : "Starts the mission timer")
                 }
-                .padding(16)
-                .background(Color.carbonGrey.opacity(0.95))
-                .cornerRadius(24)
-                .padding(.horizontal).padding(.bottom, 20)
             } else {
-                // Styled Empty State CTA
                 NavigationLink(destination: QuestBoardView()) {
                     HStack(spacing: 10) {
                         Image(systemName: "terminal.fill")
@@ -248,6 +311,118 @@ struct BattleView: View {
         }
     }
     
+    // MARK: - Overtime Helpers
+    
+    private func questElapsed(_ quest: Quest, at date: Date) -> TimeInterval {
+        var currentSession: TimeInterval = 0
+        if quest.isTimerActive, let start = quest.lastStartedAt {
+            currentSession = date.timeIntervalSince(start)
+        }
+        return quest.timeSpent + currentSession
+    }
+    
+    private func formatOvertimeShort(_ seconds: TimeInterval) -> String {
+        let mins = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        if mins > 0 { return "\(mins)m \(secs)s" }
+        return "\(secs)s"
+    }
+    
+    private func triggerOvertimeAlert() {
+        overtimeAlertShown = true
+        
+        // Play the user's chosen alert sound
+        AudioServicesPlaySystemSound(SystemSoundID(selectedSoundID))
+        Haptics.shared.notify(.warning)
+        
+        // Accelerate burnout
+        hero.burnoutLevel = min(1.0, hero.burnoutLevel + 0.1)
+        try? modelContext.save()
+        
+        // Show the popup
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            showOvertimeAlert = true
+        }
+    }
+    
+    // MARK: - Overtime Alert Overlay
+    private var overtimeAlertOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.7)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation { showOvertimeAlert = false }
+                }
+            
+            VStack(spacing: 20) {
+                // Warning icon
+                ZStack {
+                    Circle()
+                        .fill(Color.alertRed.opacity(0.15))
+                        .frame(width: 70, height: 70)
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(Color.ballisticOrange)
+                }
+                
+                VStack(spacing: 8) {
+                    Text("FOCUS LIMIT EXCEEDED")
+                        .font(.system(.headline, design: .monospaced)).bold()
+                        .foregroundStyle(Color.alertRed)
+                    
+                    Text("You've been focused for more than \(focusDuration) minutes. Taking a break improves performance and prevents burnout.")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(Color.smokeWhite.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                }
+                
+                // Action buttons
+                VStack(spacing: 10) {
+                    Button {
+                        withAnimation { showOvertimeAlert = false }
+                        // Navigate to Recharge hub
+                        showRechargeFromOvertime = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "gamecontroller.fill")
+                            Text("GO RECHARGE")
+                                .font(.system(.subheadline, design: .monospaced)).bold()
+                        }
+                        .foregroundStyle(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            LinearGradient(colors: [Color.toxicLime, Color.electricCyan],
+                                           startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(14)
+                    }
+                    
+                    Button {
+                        withAnimation { showOvertimeAlert = false }
+                    } label: {
+                        Text("CONTINUE ANYWAY")
+                            .font(.system(.caption, design: .monospaced)).bold()
+                            .foregroundStyle(Color.ashGrey)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.white.opacity(0.05))
+                            .cornerRadius(12)
+                    }
+                }
+            }
+            .padding(24)
+            .background(Color.carbonGrey)
+            .cornerRadius(24)
+            .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.alertRed.opacity(0.3), lineWidth: 1))
+            .padding(.horizontal, 30)
+            .transition(.scale(scale: 0.85).combined(with: .opacity))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Focus limit exceeded. You've been focused for over \(focusDuration) minutes.")
+    }
+    
     private func toggleTimer(_ quest: Quest) {
         withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
             if quest.isTimerActive {
@@ -262,10 +437,14 @@ struct BattleView: View {
                 let session = Session(taskName: quest.title, duration: elapsed)
                 modelContext.insert(session)
                 
+                // Reset overtime flag when stopping
+                overtimeAlertShown = false
+                
                 Haptics.shared.play(.medium)
             } else {
                 quest.lastStartedAt = Date()
                 quest.isTimerActive = true
+                overtimeAlertShown = false // reset for new run
                 Haptics.shared.play(.light)
             }
             
@@ -319,6 +498,8 @@ struct HeroStatusCard: View {
         .background(Color.carbonGrey.opacity(0.3))
         .cornerRadius(20)
         .padding(.horizontal)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("System Architect, \(hero.nanobytes) nanobytes, \(hero.currentXP) of \(hero.maxXP) XP\(hero.burnoutLevel > 0.5 ? ", burnout warning active" : "")")
     }
 }
 
@@ -444,6 +625,7 @@ struct BattleCard: View {
                             .font(.system(size: 32))
                             .foregroundStyle(Color.ashGrey.opacity(0.4))
                     }
+                    .accessibilityHidden(true)
                     
                     VStack(spacing: 6) {
                         Text("NO ACTIVE MODULES")
@@ -459,6 +641,8 @@ struct BattleCard: View {
                 .frame(maxWidth: .infinity)
                 .background(Color.carbonGrey.opacity(0.3))
                 .cornerRadius(20)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("No active modules. Initialize a mission from the Registry to begin.")
             }
         }
         .padding(.horizontal)
@@ -564,6 +748,8 @@ struct LastMergedBanner: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.toxicLime.opacity(0.1), lineWidth: 1)
         )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Last merged: \(quest.title), \(timeAgo)")
     }
 }
 
@@ -599,6 +785,8 @@ struct DeploymentHistoryCard: View {
                     .padding(12)
                     .background(Color.carbonGrey.opacity(0.2))
                     .cornerRadius(12)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(quest.title), earned \(quest.totalXP) XP\(quest.isBoss ? ", debt module" : "")")
                 }
             }
         }

@@ -6,6 +6,7 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Query private var heroes: [Hero]
     
+    @State private var router = Router()
     @State private var showWisdom = true
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
     @State private var showLevelUp = false
@@ -26,16 +27,20 @@ struct ContentView: View {
         }
     }
     
+    // =====================================================
+    // MARK: - Main App View
+    // =====================================================
+    
     private var mainAppView: some View {
         ZStack {
-            // Adaptive layout: Sidebar on iPad, Tabs on iPhone
+            // Adaptive: Sidebar on iPad, Tabs on iPhone
             if sizeClass == .regular {
                 iPadSidebarView
             } else {
                 iPhoneTabView
             }
             
-            // OVERLAYS (shared across both layouts)
+            // OVERLAYS (shared across all layouts)
             if showWisdom {
                 NeuralSyncView(isVisible: $showWisdom)
                     .zIndex(2)
@@ -65,6 +70,7 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .background(Color.voidBlack.ignoresSafeArea())
+        .environment(router)
         .onAppear { checkForDailyReset() }
         .onChange(of: hero?.level) { oldValue, newValue in
             if let newVal = newValue, let oldVal = oldValue, newVal > oldVal {
@@ -94,7 +100,6 @@ struct ContentView: View {
     
     private var sidebarContent: some View {
         List(selection: $sidebarSelection) {
-            // CORE
             Section {
                 sidebarRow(.command)
                 sidebarRow(.registry)
@@ -105,7 +110,6 @@ struct ContentView: View {
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
             }
             
-            // TOOLS
             Section {
                 sidebarRow(.devTools)
                 sidebarRow(.library)
@@ -114,7 +118,6 @@ struct ContentView: View {
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
             }
             
-            // ANALYTICS
             Section {
                 sidebarRow(.vitality)
                 sidebarRow(.milestones)
@@ -124,7 +127,6 @@ struct ContentView: View {
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
             }
             
-            // SYSTEM
             Section {
                 sidebarRow(.armory)
                 sidebarRow(.settings)
@@ -163,49 +165,54 @@ struct ContentView: View {
     }
     
     // =====================================================
-    // MARK: - iPhone: 5-Tab Grouped Navigation
+    // MARK: - iPhone: 5-Tab Navigation
     // =====================================================
     
-    @AppStorage("selectedTab") private var selectedTab = 0
-    
     private var iPhoneTabView: some View {
-        TabView(selection: $selectedTab) {
-            // Tab 1: Command (Focus Timer)
-            BattleView()
-                .tag(0)
-                .tabItem {
-                    Label("Command", systemImage: "terminal.fill")
-                }
+        TabView(selection: $router.selectedTab) {
+            Tab("Command", systemImage: "terminal.fill", value: .command) {
+                BattleView()
+            }
             
-            // Tab 2: Board (Registry + Deadlines + Standup)
-            BoardHubView()
-                .tag(1)
-                .tabItem {
-                    Label("Board", systemImage: "square.stack.3d.up.fill")
-                }
+            Tab("Board", systemImage: "square.stack.3d.up.fill", value: .board) {
+                BoardHubView()
+            }
             
-            // Tab 3: Vitality (Dashboard + Milestones)
-            VitalityHubView()
-                .tag(2)
-                .tabItem {
-                    Label("Vitality", systemImage: "waveform.path.ecg")
-                }
+            Tab("Vitality", systemImage: "waveform.path.ecg", value: .vitality) {
+                VitalityHubView()
+            }
             
-            // Tab 4: Toolkit (Dev Tools + Library)
-            ToolkitHubView()
-                .tag(3)
-                .tabItem {
-                    Label("Toolkit", systemImage: "wrench.and.screwdriver.fill")
-                }
+            Tab("Toolkit", systemImage: "wrench.and.screwdriver.fill", value: .toolkit) {
+                ToolkitHubView()
+            }
             
-            // Tab 5: System (Armory + Settings)
-            SystemHubView()
-                .tag(4)
-                .tabItem {
-                    Label("System", systemImage: "gearshape.2.fill")
-                }
+            Tab("System", systemImage: "gearshape.2.fill", value: .system) {
+                SystemHubView()
+            }
         }
         .tint(Color.toxicLime)
+    }
+    
+    // =====================================================
+    // MARK: - Centralized Destination Builder
+    // =====================================================
+    
+    @ViewBuilder
+    private func destinationView(for destination: Router.Destination) -> some View {
+        switch destination {
+        case .questDetail(let questID):
+            QuestBoardView() // Deep-link to specific quest
+        case .snippetEditor(let snippetID):
+            SnippetLibraryView()
+        case .rechargeGame(let game):
+            switch game {
+            case "memoryFlip": MemoryGameView()
+            case "codeSnake":  CodeSnakeView()
+            default: RechargeHubView()
+            }
+        case .burnoutProtocol:
+            RechargeHubView()
+        }
     }
     
     // MARK: - Daily Reset
@@ -267,7 +274,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 }
 
 // =====================================================
-// MARK: - iPhone Hub Views (Grouped Tabs)
+// MARK: - iPhone Hub Views (Grouped Segments)
 // =====================================================
 
 // MARK: Board Hub — Registry + Deadlines + Standup
@@ -286,6 +293,7 @@ struct BoardHubView: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
         }
         .background(Color.voidBlack)
+        .sensoryFeedback(.selection, trigger: segment)
     }
     
     private var segmentPicker: some View {
@@ -306,7 +314,6 @@ struct BoardHubView: View {
         let isActive = segment == index
         return Button {
             withAnimation(.spring(response: 0.3)) { segment = index }
-            Haptics.shared.play(.light)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: icon).font(.system(size: 10))
@@ -321,7 +328,7 @@ struct BoardHubView: View {
     }
 }
 
-// MARK: Vitality Hub — Dashboard + Milestones
+// MARK: Vitality Hub — Dashboard + Milestones + Recharge
 struct VitalityHubView: View {
     @State private var segment = 0
     
@@ -337,6 +344,7 @@ struct VitalityHubView: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
         }
         .background(Color.voidBlack)
+        .sensoryFeedback(.selection, trigger: segment)
     }
     
     private var segmentPicker: some View {
@@ -357,7 +365,6 @@ struct VitalityHubView: View {
         let isActive = segment == index
         return Button {
             withAnimation(.spring(response: 0.3)) { segment = index }
-            Haptics.shared.play(.light)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: icon).font(.system(size: 10))
@@ -387,6 +394,7 @@ struct ToolkitHubView: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
         }
         .background(Color.voidBlack)
+        .sensoryFeedback(.selection, trigger: segment)
     }
     
     private var segmentPicker: some View {
@@ -406,7 +414,6 @@ struct ToolkitHubView: View {
         let isActive = segment == index
         return Button {
             withAnimation(.spring(response: 0.3)) { segment = index }
-            Haptics.shared.play(.light)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: icon).font(.system(size: 10))
@@ -436,6 +443,7 @@ struct SystemHubView: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
         }
         .background(Color.voidBlack)
+        .sensoryFeedback(.selection, trigger: segment)
     }
     
     private var segmentPicker: some View {
@@ -455,7 +463,6 @@ struct SystemHubView: View {
         let isActive = segment == index
         return Button {
             withAnimation(.spring(response: 0.3)) { segment = index }
-            Haptics.shared.play(.light)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: icon).font(.system(size: 10))

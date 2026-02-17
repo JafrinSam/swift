@@ -16,8 +16,7 @@ let package = Package(
         .iOSApplication(
             name: "dev energy",
             targets: ["AppModule"],
-            bundleIdentifier: "jafrin",
-            teamIdentifier: "H7YDDV2V7F",
+            teamIdentifier: "4TJJL53F39",
             displayVersion: "1.0",
             bundleVersion: "1",
             appIcon: .placeholder(icon: .weights),
