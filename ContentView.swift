@@ -43,32 +43,38 @@ struct ContentView: View {
                         Label("Registry", systemImage: "square.stack.3d.up.fill")
                     }
                 
-                DashboardView()
+                TodoListView()
                     .tag(2)
+                    .tabItem {
+                        Label("Deadlines", systemImage: "bell.badge.fill")
+                    }
+                
+                DashboardView()
+                    .tag(3)
                     .tabItem {
                         Label("Vitality", systemImage: "waveform.path.ecg")
                     }
                 
                 AchievementsView()
-                    .tag(3)
+                    .tag(4)
                     .tabItem { 
                         Label("Milestones", systemImage: "trophy.circle.fill") 
                     }
                 
                 MarketplaceView()
-                    .tag(4)
+                    .tag(5)
                     .tabItem {
                         Label("Armory", systemImage: "cart.fill")
                     }
                 
                 SnippetLibraryView() // FIXED: Renamed from Grimoire
-                    .tag(5)
+                    .tag(6)
                     .tabItem {
                         Label("Library", systemImage: "book.closed.fill")
                     }
                 
                 SettingsView()
-                    .tag(6)
+                    .tag(7)
                     .tabItem {
                         Label("Settings", systemImage: "gearshape.fill")
                     }

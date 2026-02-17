@@ -11,6 +11,7 @@ struct MyApp: App {
             SubQuest.self,
             Session.self,
             Snippet.self,
+            TodoItem.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
