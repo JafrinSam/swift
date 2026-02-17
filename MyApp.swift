@@ -12,6 +12,7 @@ struct MyApp: App {
             Session.self,
             Snippet.self,
             TodoItem.self,
+            StandupNote.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

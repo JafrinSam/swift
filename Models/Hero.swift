@@ -19,9 +19,15 @@ class Hero {
     var streakDays: Int = 1
     var lastResetDate: Date = Date()
     
-    // MARK: - Unlocks
-    var unlockedItems: [String] = ["theme_default"]
+    // MARK: - Unlocks (stored as comma-separated string for SwiftData compatibility)
+    var unlockedItemsRaw: String = "theme_default"
     var equippedTheme: String = "theme_default"
+    
+    /// Computed accessor for the unlocked items array
+    var unlockedItems: [String] {
+        get { unlockedItemsRaw.split(separator: ",").map(String.init) }
+        set { unlockedItemsRaw = newValue.joined(separator: ",") }
+    }
 
     // MARK: - THE INITIALIZER (The Fix)
     // SwiftData requires this to be explicit
@@ -41,7 +47,7 @@ class Hero {
         self.burnoutLevel = 0.0
         self.lastActivityTimestamp = Date()
         self.streakDays = 1
-        self.unlockedItems = ["theme_default"]
+        self.unlockedItemsRaw = "theme_default"
         self.equippedTheme = "theme_default"
     }
 

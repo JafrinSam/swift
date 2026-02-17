@@ -121,7 +121,7 @@ struct OnboardingView: View {
         VStack(spacing: 24) {
             Spacer()
             
-            Image(systemName: "list.bullet.rectangle.stack.fill")
+            Image(systemName: "list.bullet.rectangle.portrait.fill")
                 .font(.system(size: 60))
                 .foregroundStyle(Color.electricCyan)
             
