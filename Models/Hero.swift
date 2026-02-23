@@ -53,18 +53,21 @@ class Hero {
 
     // MARK: - Logic Methods
     
+    // MARK: - Logic Methods
+    
     func addXP(amount: Int, difficultyMultiplier: Double = 1.0) {
         refreshBurnout()
         
-        // Burnout Penalty: If burnout > 70%, XP is halved
-        let wellnessMultiplier = burnoutLevel > 0.7 ? 0.5 : 1.0
+        // Burnout Penalty: If burnout > 80%, XP is halved
+        let wellnessMultiplier = burnoutLevel > 0.8 ? 0.5 : 1.0
         let finalXP = Int(Double(amount) * wellnessMultiplier)
         
         currentXP += finalXP
         nanobytes += (finalXP / 2)
         
-        // Increase Burnout based on task difficulty
-        let burnoutIncrease = 0.05 * difficultyMultiplier
+        // Burnout Increase: Scaled by effort (approx 4% for 25m session)
+        // Formula: Base 0.02 + (difficulty * 0.02)
+        let burnoutIncrease = 0.02 + (0.02 * difficultyMultiplier)
         burnoutLevel = min(1.0, burnoutLevel + burnoutIncrease)
         
         lastActivityTimestamp = Date()
@@ -76,13 +79,19 @@ class Hero {
 
     func refreshBurnout() {
         let secondsSinceLastWork = Date().timeIntervalSince(lastActivityTimestamp)
-        let hoursSinceLastWork = secondsSinceLastWork / 3600
+        let minutesSinceLastWork = secondsSinceLastWork / 60
         
-        if hoursSinceLastWork > 0.5 {
-            // Recovery: 20% reduction per hour of rest
-            let recovery = hoursSinceLastWork * 0.2
-            burnoutLevel = max(0.0, burnoutLevel - recovery)
+        // Recovery kicks in after 15 minutes of rest (was 30)
+        if minutesSinceLastWork > 15 {
+            // Passive Recovery: 5% per 15 minutes
+            let recoveryPeriods = floor(minutesSinceLastWork / 15)
+            let recoveryAmount = recoveryPeriods * 0.05
+            burnoutLevel = max(0.0, burnoutLevel - recoveryAmount)
         }
+    }
+    
+    func recoverBurnout(amount: Double) {
+        burnoutLevel = max(0.0, burnoutLevel - amount)
     }
 
     private func levelUp() {
@@ -90,6 +99,9 @@ class Hero {
         level += 1
         maxXP = level * 120
         nanobytes += 100
+        
+        // Level Up heals 20% burnout
+        recoverBurnout(amount: 0.20)
     }
 }
 
@@ -104,11 +116,10 @@ extension Hero {
             
             // 1. Reset burnout tracking
             self.totalFocusMinutes = 0.0
+            self.burnoutLevel = 0.0 // Full restore
             
             // 2. Update the anchor to today
             self.lastResetDate = Date()
-            
-            // 3. Optional: Reset daily streaks or specific daily goals here
         }
     }
 }

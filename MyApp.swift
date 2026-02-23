@@ -1,8 +1,13 @@
 import SwiftUI
 import SwiftData
+import TipKit
 
 @main
 struct MyApp: App {
+    init() {
+        try? Tips.configure()
+    }
+
     // This creates the SQLite container for all your data types
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([

@@ -61,6 +61,7 @@ class Quest {
     var isTimerActive: Bool = false
     var isFlowMode: Bool = false
     var voiceNotePath: String? = nil
+    var completedAt: Date? = nil
     
     // RELATIONSHIP: Cascade delete ensures clean data management
     @Relationship(deleteRule: .cascade, inverse: \SubQuest.parentQuest) 
@@ -75,6 +76,7 @@ class Quest {
         self.timeSpent = 0
         self.isTimerActive = false
         self.subQuests = []
+        self.completedAt = nil
     }
     
     // MARK: - Advanced Logic

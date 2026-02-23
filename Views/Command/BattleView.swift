@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AVFoundation
+import TipKit
 
 struct BattleView: View {
     @Query private var heroes: [Hero]
@@ -18,6 +19,11 @@ struct BattleView: View {
     @State private var showOvertimeAlert = false
     @State private var overtimeAlertShown = false // one-time per session
     @State private var showRechargeFromOvertime = false
+    
+    // Tips
+    private let burnoutTip = BurnoutTip()
+    private let flowModeTip = FlowModeTip()
+    private let xpTip = XPTip()
     
     var hero: Hero { heroes.first ?? Hero() }
     var activeQuest: Quest? { activeQuests.first }
@@ -45,7 +51,13 @@ struct BattleView: View {
                 ScrollView {
                     VStack(spacing: 20) {
                         headerView
-                        HeroStatusCard(hero: hero)
+                        HeroStatusCard(
+                            hero: hero,
+                            activeQuest: activeQuest,
+                            showOvertimeAlert: showOvertimeAlert,
+                            burnoutTip: burnoutTip,
+                            xpTip: xpTip
+                        )
                         
                         // Main Battle Card with sub-quest toggles
                         BattleCard(
@@ -270,6 +282,7 @@ struct BattleView: View {
                             }
                             .accessibilityLabel(quest.isTimerActive ? "Pause timer" : "Start timer")
                             .accessibilityHint(quest.isTimerActive ? "Pauses the active mission timer" : "Starts the mission timer")
+                            .popoverTip(flowModeTip, arrowEdge: .top)
                         }
                         .padding(16)
                         .background(
@@ -333,7 +346,6 @@ struct BattleView: View {
         
         // Play the user's chosen alert sound
         AudioServicesPlaySystemSound(SystemSoundID(selectedSoundID))
-        Haptics.shared.notify(.warning)
         
         // Accelerate burnout
         hero.burnoutLevel = min(1.0, hero.burnoutLevel + 0.1)
@@ -439,13 +451,10 @@ struct BattleView: View {
                 
                 // Reset overtime flag when stopping
                 overtimeAlertShown = false
-                
-                Haptics.shared.play(.medium)
             } else {
                 quest.lastStartedAt = Date()
                 quest.isTimerActive = true
                 overtimeAlertShown = false // reset for new run
-                Haptics.shared.play(.light)
             }
             
             do {
@@ -460,6 +469,11 @@ struct BattleView: View {
 // MARK: - Hero Status Card
 struct HeroStatusCard: View {
     var hero: Hero
+    var activeQuest: Quest?
+    var showOvertimeAlert: Bool
+    var burnoutTip: BurnoutTip
+    var xpTip: XPTip
+    
     var body: some View {
         HStack(spacing: 15) {
             ZStack {
@@ -482,6 +496,7 @@ struct HeroStatusCard: View {
                             .padding(.horizontal, 5).padding(.vertical, 2)
                             .background(Color.ballisticOrange)
                             .cornerRadius(4)
+                            .popoverTip(burnoutTip, arrowEdge: .top)
                     }
                 }
                 HStack {
@@ -493,13 +508,19 @@ struct HeroStatusCard: View {
                 ProgressView(value: Double(hero.currentXP), total: Double(hero.maxXP))
                     .tint(Color.toxicLime)
             }
+            .popoverTip(xpTip, arrowEdge: .bottom)
         }
-        .padding()
+        .padding(16)
         .background(Color.carbonGrey.opacity(0.3))
         .cornerRadius(20)
         .padding(.horizontal)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("System Architect, \(hero.nanobytes) nanobytes, \(hero.currentXP) of \(hero.maxXP) XP\(hero.burnoutLevel > 0.5 ? ", burnout warning active" : "")")
+        .sensoryFeedback(trigger: activeQuest?.isTimerActive) { old, new in
+            guard let new = new else { return nil }
+            return new ? .impact(weight: .light) : .impact(weight: .medium)
+        }
+        .sensoryFeedback(.warning, trigger: showOvertimeAlert)
     }
 }
 

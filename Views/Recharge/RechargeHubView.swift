@@ -1,9 +1,13 @@
 import SwiftUI
+import TipKit
 import SwiftData
 
 // MARK: - Recharge Hub (Game Picker)
 struct RechargeHubView: View {
     @Query private var heroes: [Hero]
+    
+    // Tips
+    private let burnoutTip = BurnoutTip()
     
     var hero: Hero? { heroes.first }
     
@@ -22,10 +26,12 @@ struct RechargeHubView: View {
             }
         }
         
-        var emoji: String {
+
+        
+        var iconName: String {
             switch self {
-            case .memoryFlip: return "🃏"
-            case .codeSnake:  return "🐍"
+            case .memoryFlip: return "MemoryIcon"
+            case .codeSnake:  return "SnakeIcon"
             }
         }
         
@@ -90,8 +96,12 @@ struct RechargeHubView: View {
     // MARK: - Header
     private var headerSection: some View {
         VStack(spacing: 8) {
-            Text("🎮")
-                .font(.system(size: 40))
+            Image("ArcadeHeader")
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .frame(width: 44, height: 44)
+                .foregroundStyle(Color.toxicLime)
             Text("RECHARGE ARCADE")
                 .font(.system(size: 16, weight: .black, design: .monospaced))
                 .foregroundStyle(.white)
@@ -134,20 +144,25 @@ struct RechargeHubView: View {
         .background(Color.carbonGrey.opacity(0.4))
         .cornerRadius(14)
         .padding(.horizontal)
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .combine)
         .accessibilityLabel("Burnout level: \(Int(level * 100)) percent. Playing games reduces burnout.")
+        .popoverTip(burnoutTip, arrowEdge: .top)
     }
     
     // MARK: - Game Card
     private func gameCard(_ game: RechargeGame) -> some View {
         HStack(spacing: 14) {
-            // Emoji icon
+            // Game Icon from Assets
             ZStack {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(game.color.opacity(0.12))
+                Image(game.iconName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
                     .frame(width: 60, height: 60)
-                Text(game.emoji)
-                    .font(.system(size: 28))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(game.color.opacity(0.3), lineWidth: 1)
+                    )
             }
             
             // Info

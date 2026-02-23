@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import TipKit
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
@@ -39,7 +40,8 @@ struct ContentView: View {
             } else {
                 iPhoneTabView
             }
-            
+        }
+        .overlay {
             // OVERLAYS (shared across all layouts)
             if showWisdom {
                 NeuralSyncView(isVisible: $showWisdom)
@@ -49,7 +51,7 @@ struct ContentView: View {
                         removal: AnyTransition.move(edge: .top).combined(with: AnyTransition.opacity)
                     ))
             }
-            
+
             if showLevelUp {
                 LevelUpAlert(
                     newLevel: levelUpLevel,
@@ -73,12 +75,19 @@ struct ContentView: View {
         .environment(router)
         .onAppear { checkForDailyReset() }
         .onChange(of: hero?.level) { oldValue, newValue in
-            if let newVal = newValue, let oldVal = oldValue, newVal > oldVal {
+                    if let newVal = newValue, let oldVal = oldValue, newVal > oldVal {
                 levelUpLevel = newVal
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                     showLevelUp = true
                 }
             }
+        }
+        .task {
+            // Configure TipKit
+            try? Tips.configure([
+                .displayFrequency(.immediate),
+                .datastoreLocation(.applicationDefault)
+            ])
         }
     }
     
@@ -87,9 +96,10 @@ struct ContentView: View {
     // =====================================================
     
     @State private var sidebarSelection: SidebarItem? = .command
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     
     private var iPadSidebarView: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             sidebarContent
                 .navigationTitle("ForgeFlow")
         } detail: {
@@ -171,23 +181,23 @@ struct ContentView: View {
     private var iPhoneTabView: some View {
         TabView(selection: $router.selectedTab) {
             Tab("Command", systemImage: "terminal.fill", value: .command) {
-                BattleView()
+                NavigationStack { BattleView() }
             }
             
             Tab("Board", systemImage: "square.stack.3d.up.fill", value: .board) {
-                BoardHubView()
+                NavigationStack { BoardHubView() }
             }
             
             Tab("Vitality", systemImage: "waveform.path.ecg", value: .vitality) {
-                VitalityHubView()
+                NavigationStack { VitalityHubView() }
             }
             
             Tab("Toolkit", systemImage: "wrench.and.screwdriver.fill", value: .toolkit) {
-                ToolkitHubView()
+                NavigationStack { ToolkitHubView() }
             }
             
             Tab("System", systemImage: "gearshape.2.fill", value: .system) {
-                SystemHubView()
+                NavigationStack { SystemHubView() }
             }
         }
         .tint(Color.toxicLime)
@@ -200,9 +210,9 @@ struct ContentView: View {
     @ViewBuilder
     private func destinationView(for destination: Router.Destination) -> some View {
         switch destination {
-        case .questDetail(let questID):
+        case .questDetail(_):
             QuestBoardView() // Deep-link to specific quest
-        case .snippetEditor(let snippetID):
+        case .snippetEditor(_):
             SnippetLibraryView()
         case .rechargeGame(let game):
             switch game {

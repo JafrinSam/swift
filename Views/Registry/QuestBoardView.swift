@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import AVFoundation
+import TipKit
 
 struct QuestBoardView: View {
     @Environment(\.modelContext) private var modelContext
@@ -229,298 +230,29 @@ struct QuestRow: View {
     @AppStorage("focusDuration") private var focusDuration: Int = 25
     @AppStorage("selectedSoundID") private var selectedSoundID: Int = 1005
     @State private var showOvertimeAlert = false
+
     @State private var overtimeAlertShown = false
     @State private var showRechargeFromOvertime = false
     
+    // Tips
+    private let bossTip = BossQuestTip()
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // --- HEADER ---
-            HStack(spacing: 12) {
-                // Complete button
-                Button { toggleMainQuest() } label: {
-                    Image(systemName: isCompleted ? "checkmark.seal.fill" : "circle.inset.filled")
-                        .font(.title2)
-                        .foregroundStyle(
-                            isCompleted ? Color.toxicLime
-                            : (quest.isBoss ? Color.alertRed : Color.electricCyan)
-                        )
-                }
-                .buttonStyle(.plain)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(quest.title)
-                        .font(.system(.headline, design: .monospaced))
-                        .strikethrough(isCompleted)
-                        .foregroundStyle(isCompleted ? Color.ashGrey : Color.white)
-                    
-                    if quest.isBoss && !isCompleted {
-                        Text("⚠ TECHNICAL DEBT")
-                            .font(.system(size: 8, weight: .black, design: .monospaced))
-                            .padding(.horizontal, 6).padding(.vertical, 3)
-                            .background(Color.alertRed)
-                            .foregroundStyle(.black)
-                            .cornerRadius(4)
-                    }
-                    
-                    // Mini Progress Bar
-                    if !isCompleted && !quest.subQuests.isEmpty {
-                        HStack(spacing: 6) {
-                            ProgressView(value: quest.progress)
-                                .tint(quest.isBoss ? Color.alertRed : Color.electricCyan)
-                                .frame(maxWidth: 100)
-                            
-                            Text("\(Int(quest.progress * 100))%")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color.ashGrey)
-                        }
+            header
+                .padding(14)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.3)) {
+                        isExpanded.toggle()
                     }
                 }
-                
-                Spacer()
-                
-                // XP Badge
-                if !isCompleted {
-                    Text("\(quest.totalXP) XP")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .padding(.horizontal, 8).padding(.vertical, 5)
-                        .background(Color.carbonGrey)
-                        .foregroundStyle(Color.ballisticOrange)
-                        .cornerRadius(8)
-                }
-                
-                // Expand chevron
-                Image(systemName: "chevron.right")
-                    .font(.caption2.bold())
-                    .foregroundStyle(Color.ashGrey)
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-            }
-            .padding(14)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(.spring(response: 0.3)) {
-                    isExpanded.toggle()
-                }
-                Haptics.shared.play(.light)
-            }
             
-            // --- EXPANDED SECTION ---
             if isExpanded {
-                VStack(alignment: .leading, spacing: 14) {
-                    // Description
-                    if !quest.details.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("MODULE DOCUMENTATION")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color.ashGrey)
-                            Text(quest.details)
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(Color.smokeWhite.opacity(0.8))
-                        }
-                    }
-                    
-                    // Timer Controls (only for active quests)
-                    if !isCompleted {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("REACTOR INITIALIZATION")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                .foregroundStyle(Color.ashGrey)
-                            
-                            if quest.isActive && quest.isTimerActive {
-                                TimelineView(.periodic(from: .now, by: 1.0)) { context in
-                                    let elapsed = questElapsedTime(at: context.date)
-                                    let limitSeconds = TimeInterval(focusDuration * 60)
-                                    let isOvertime = elapsed > limitSeconds
-                                    let overtimeSeconds = max(0, elapsed - limitSeconds)
-                                    
-                                    VStack(spacing: 4) {
-                                        // Overtime warning badge
-                                        if isOvertime {
-                                            HStack(spacing: 6) {
-                                                Image(systemName: "exclamationmark.triangle.fill")
-                                                    .font(.system(size: 9))
-                                                Text("OVERTIME +\(formatOvertime(overtimeSeconds))")
-                                                    .font(.system(size: 9, weight: .black, design: .monospaced))
-                                            }
-                                            .foregroundStyle(Color.alertRed)
-                                            .padding(.horizontal, 8).padding(.vertical, 4)
-                                            .background(Color.alertRed.opacity(0.12))
-                                            .cornerRadius(6)
-                                            .transition(.opacity.combined(with: .move(edge: .top)))
-                                        }
-                                        
-                                        HStack(spacing: 12) {
-                                            ZStack {
-                                                RoundedRectangle(cornerRadius: 12)
-                                                    .fill(isOvertime ? Color.alertRed.opacity(0.15) : Color.carbonGrey.opacity(0.5))
-                                                LiveQuestTimer(quest: quest)
-                                                    .foregroundStyle(isOvertime ? Color.alertRed : Color.toxicLime)
-                                            }
-                                            .frame(maxWidth: .infinity).frame(height: 44)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 12)
-                                                    .stroke(isOvertime ? Color.alertRed.opacity(0.3) : Color.clear, lineWidth: 1)
-                                            )
-                                            
-                                            Button(role: .destructive) {
-                                                toggleGlobalTimer(quest)
-                                            } label: {
-                                                Label("STOP", systemImage: "stop.fill")
-                                                    .font(.system(.caption, design: .monospaced)).bold()
-                                                    .frame(maxWidth: .infinity).padding(12)
-                                                    .background(Color.alertRed.opacity(0.2))
-                                                    .cornerRadius(12)
-                                            }
-                                        }
-                                    }
-                                    .onChange(of: isOvertime) { _, newValue in
-                                        if newValue && !overtimeAlertShown {
-                                            triggerOvertimeAlert()
-                                        }
-                                    }
-                                }
-                            } else {
-                                Menu {
-                                    Button {
-                                        quest.isActive = true
-                                        toggleGlobalTimer(quest)
-                                    } label: {
-                                        Label("Start Timer", systemImage: "timer")
-                                    }
-                                    Button {
-                                        quest.isActive = true
-                                        quest.isFlowMode = true
-                                        toggleGlobalTimer(quest)
-                                    } label: {
-                                        Label("Flow State (∞)", systemImage: "infinity")
-                                    }
-                                } label: {
-                                    HStack {
-                                        Image(systemName: "bolt.fill")
-                                        Text("ENGAGE REACTOR")
-                                    }
-                                    .font(.system(.caption, design: .monospaced)).bold()
-                                    .foregroundStyle(.black)
-                                    .frame(maxWidth: .infinity).padding(12)
-                                    .background(Color.toxicLime)
-                                    .cornerRadius(12)
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Sub-Quests
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("SUB-MODULES")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color.ashGrey)
-                        
-                        if quest.subQuests.isEmpty {
-                            Text("No sub-modules yet")
-                                .font(.caption)
-                                .foregroundStyle(Color.ashGrey.opacity(0.5))
-                        } else {
-                            ForEach(quest.subQuests, id: \.id) { subQuest in
-                                HStack(spacing: 10) {
-                                    Button { toggleSubQuest(subQuest) } label: {
-                                        Image(systemName: subQuest.isCompleted ? "checkmark.circle.fill" : "circle")
-                                            .foregroundStyle(subQuest.isCompleted ? Color.toxicLime : Color.ashGrey)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .disabled(isCompleted)
-                                    
-                                    Text(subQuest.title)
-                                        .font(.system(.subheadline, design: .monospaced))
-                                        .strikethrough(subQuest.isCompleted)
-                                        .foregroundStyle(subQuest.isCompleted ? Color.ashGrey : .white)
-                                    
-                                    Spacer()
-                                    
-                                    Text(subQuest.difficulty.rawValue)
-                                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(difficultyColor(subQuest.difficulty))
-                                    
-                                    Text("+\(subQuest.difficulty.xpReward)")
-                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(Color.ballisticOrange)
-                                }
-                            }
-                        }
-                        
-                        // Inline Add Sub-Quest
-                        if !isCompleted {
-                            VStack(spacing: 8) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "plus.circle")
-                                        .foregroundStyle(Color.electricCyan)
-                                        .font(.caption)
-                                    
-                                    TextField("New sub-module...", text: $newSubTitle)
-                                        .font(.system(.caption, design: .monospaced))
-                                        .foregroundStyle(.white)
-                                        .textFieldStyle(.plain)
-                                }
-                                
-                                if !newSubTitle.isEmpty {
-                                    HStack {
-                                        Picker("", selection: $newSubDifficulty) {
-                                            ForEach(QuestDifficulty.allCases, id: \.self) { diff in
-                                                Text(diff.rawValue).tag(diff)
-                                            }
-                                        }
-                                        .pickerStyle(.segmented)
-                                        
-                                        Button {
-                                            addSubQuestInline()
-                                        } label: {
-                                            Text("ADD")
-                                                .font(.system(size: 10, weight: .black, design: .monospaced))
-                                                .foregroundStyle(.black)
-                                                .padding(.horizontal, 12).padding(.vertical, 6)
-                                                .background(Color.electricCyan)
-                                                .cornerRadius(8)
-                                        }
-                                    }
-                                    .transition(.opacity.combined(with: .move(edge: .top)))
-                                }
-                            }
-                            .padding(10)
-                            .background(Color.voidBlack.opacity(0.4))
-                            .cornerRadius(10)
-                        }
-                    }
-                    
-                    // Action Buttons: Edit + Delete
-                    if !isCompleted {
-                        HStack(spacing: 12) {
-                            if let onEdit = onEdit {
-                                Button {
-                                    onEdit()
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                        .font(.system(.caption, design: .monospaced)).bold()
-                                        .foregroundStyle(Color.electricCyan)
-                                        .frame(maxWidth: .infinity).padding(10)
-                                        .background(Color.electricCyan.opacity(0.1))
-                                        .cornerRadius(10)
-                                }
-                            }
-                            
-                            Button {
-                                showDeleteConfirm = true
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                                    .font(.system(.caption, design: .monospaced)).bold()
-                                    .foregroundStyle(Color.alertRed)
-                                    .frame(maxWidth: .infinity).padding(10)
-                                    .background(Color.alertRed.opacity(0.1))
-                                    .cornerRadius(10)
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                expandedContent
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 14)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .background(
@@ -566,6 +298,301 @@ struct QuestRow: View {
                     }
             }
         }
+        .sensoryFeedback(trigger: quest.isTimerActive) { old, new in
+            return new ? .impact(weight: .light) : .impact(weight: .medium)
+        }
+        .sensoryFeedback(.warning, trigger: showOvertimeAlert)
+    }
+
+    // MARK: - Components
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            // Complete button
+            Button { toggleMainQuest() } label: {
+                Image(systemName: isCompleted ? "checkmark.seal.fill" : "circle.inset.filled")
+                    .font(.title2)
+                    .foregroundStyle(
+                        isCompleted ? Color.toxicLime
+                        : (quest.isBoss ? Color.alertRed : Color.electricCyan)
+                    )
+            }
+            .buttonStyle(.plain)
+            .sensoryFeedback(.success, trigger: isCompleted)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(quest.title)
+                    .font(.system(.headline, design: .monospaced))
+                    .strikethrough(isCompleted)
+                    .foregroundStyle(isCompleted ? Color.ashGrey : Color.white)
+                
+                if quest.isBoss && !isCompleted {
+                    Text("⚠ TECHNICAL DEBT")
+                        .font(.system(size: 8, weight: .black, design: .monospaced))
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(Color.alertRed)
+                        .foregroundStyle(.black)
+                        .cornerRadius(4)
+                        .popoverTip(bossTip, arrowEdge: .leading)
+                }
+                
+                // Mini Progress Bar
+                if !isCompleted && !quest.subQuests.isEmpty {
+                    HStack(spacing: 6) {
+                        ProgressView(value: quest.progress)
+                            .tint(quest.isBoss ? Color.alertRed : Color.electricCyan)
+                            .frame(maxWidth: 100)
+                        
+                        Text("\(Int(quest.progress * 100))%")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color.ashGrey)
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            // XP Badge
+            if !isCompleted {
+                Text("\(quest.totalXP) XP")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(Color.carbonGrey)
+                    .foregroundStyle(Color.ballisticOrange)
+                    .cornerRadius(8)
+            }
+            
+            // Expand chevron
+            Image(systemName: "chevron.right")
+                .font(.caption2.bold())
+                .foregroundStyle(Color.ashGrey)
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+        }
+    }
+
+    private var expandedContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // Description
+            if !quest.details.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("MODULE DOCUMENTATION")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.ashGrey)
+                    Text(quest.details)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(Color.smokeWhite.opacity(0.8))
+                }
+            }
+            
+            timerSection
+            subQuestsSection
+            actionButtons
+        }
+    }
+
+    @ViewBuilder
+    private var timerSection: some View {
+        if !isCompleted {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("REACTOR INITIALIZATION")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.ashGrey)
+                
+                if quest.isActive && quest.isTimerActive {
+                    TimelineView(.periodic(from: .now, by: 1.0)) { context in
+                        let elapsed = questElapsedTime(at: context.date)
+                        let limitSeconds = TimeInterval(focusDuration * 60)
+                        let isOvertime = elapsed > limitSeconds
+                        let overtimeSeconds = max(0, elapsed - limitSeconds)
+                        
+                        VStack(spacing: 4) {
+                            // Overtime warning badge
+                            if isOvertime {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 9))
+                                    Text("OVERTIME +\(formatOvertime(overtimeSeconds))")
+                                        .font(.system(size: 9, weight: .black, design: .monospaced))
+                                }
+                                .foregroundStyle(Color.alertRed)
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(Color.alertRed.opacity(0.12))
+                                .cornerRadius(6)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+                            
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(isOvertime ? Color.alertRed.opacity(0.15) : Color.carbonGrey.opacity(0.5))
+                                    LiveQuestTimer(quest: quest)
+                                        .foregroundStyle(isOvertime ? Color.alertRed : Color.toxicLime)
+                                }
+                                .frame(maxWidth: .infinity).frame(height: 44)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(isOvertime ? Color.alertRed.opacity(0.3) : Color.clear, lineWidth: 1)
+                                )
+                                
+                                Button(role: .destructive) {
+                                    toggleGlobalTimer(quest)
+                                } label: {
+                                    Label("STOP", systemImage: "stop.fill")
+                                        .font(.system(.caption, design: .monospaced)).bold()
+                                        .frame(maxWidth: .infinity).padding(12)
+                                        .background(Color.alertRed.opacity(0.2))
+                                        .cornerRadius(12)
+                                }
+                            }
+                        }
+                        .onChange(of: isOvertime) { _, newValue in
+                            if newValue && !overtimeAlertShown {
+                                triggerOvertimeAlert()
+                            }
+                        }
+                    }
+                } else {
+                    Menu {
+                        Button {
+                            quest.isActive = true
+                            toggleGlobalTimer(quest)
+                        } label: {
+                            Label("Start Timer", systemImage: "timer")
+                        }
+                        Button {
+                            quest.isActive = true
+                            quest.isFlowMode = true
+                            toggleGlobalTimer(quest)
+                        } label: {
+                            Label("Flow State (∞)", systemImage: "infinity")
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "bolt.fill")
+                            Text("ENGAGE REACTOR")
+                        }
+                        .font(.system(.caption, design: .monospaced)).bold()
+                        .foregroundStyle(.black)
+                        .frame(maxWidth: .infinity).padding(12)
+                        .background(Color.toxicLime)
+                        .cornerRadius(12)
+                    }
+                }
+            }
+        }
+    }
+
+    private var subQuestsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("SUB-MODULES")
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(Color.ashGrey)
+            
+            if quest.subQuests.isEmpty {
+                Text("No sub-modules yet")
+                    .font(.caption)
+                    .foregroundStyle(Color.ashGrey.opacity(0.5))
+            } else {
+                ForEach(quest.subQuests, id: \.id) { subQuest in
+                    HStack(spacing: 10) {
+                        Button { toggleSubQuest(subQuest) } label: {
+                            Image(systemName: subQuest.isCompleted ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(subQuest.isCompleted ? Color.toxicLime : Color.ashGrey)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isCompleted)
+                        
+                        Text(subQuest.title)
+                            .font(.system(.subheadline, design: .monospaced))
+                            .strikethrough(subQuest.isCompleted)
+                            .foregroundStyle(subQuest.isCompleted ? Color.ashGrey : .white)
+                        
+                        Spacer()
+                        
+                        Text(subQuest.difficulty.rawValue)
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .foregroundStyle(difficultyColor(subQuest.difficulty))
+                        
+                        Text("+\(subQuest.difficulty.xpReward)")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color.ballisticOrange)
+                    }
+                }
+            }
+            
+            // Inline Add Sub-Quest
+            if !isCompleted {
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle")
+                            .foregroundStyle(Color.electricCyan)
+                            .font(.caption)
+                        
+                        TextField("New sub-module...", text: $newSubTitle)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .textFieldStyle(.plain)
+                    }
+                    
+                    if !newSubTitle.isEmpty {
+                        HStack {
+                            Picker("", selection: $newSubDifficulty) {
+                                ForEach(QuestDifficulty.allCases, id: \.self) { diff in
+                                    Text(diff.rawValue).tag(diff)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            
+                            Button {
+                                addSubQuestInline()
+                            } label: {
+                                Text("ADD")
+                                    .font(.system(size: 10, weight: .black, design: .monospaced))
+                                    .foregroundStyle(.black)
+                                    .padding(.horizontal, 12).padding(.vertical, 6)
+                                    .background(Color.electricCyan)
+                                    .cornerRadius(8)
+                            }
+                        }
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+                .padding(10)
+                .background(Color.voidBlack.opacity(0.4))
+                .cornerRadius(10)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        if !isCompleted {
+            HStack(spacing: 12) {
+                if let onEdit = onEdit {
+                    Button {
+                        onEdit()
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
+                            .font(.system(.caption, design: .monospaced)).bold()
+                            .foregroundStyle(Color.electricCyan)
+                            .frame(maxWidth: .infinity).padding(10)
+                            .background(Color.electricCyan.opacity(0.1))
+                            .cornerRadius(10)
+                    }
+                }
+                
+                Button {
+                    showDeleteConfirm = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                        .font(.system(.caption, design: .monospaced)).bold()
+                        .foregroundStyle(Color.alertRed)
+                        .frame(maxWidth: .infinity).padding(10)
+                        .background(Color.alertRed.opacity(0.1))
+                        .cornerRadius(10)
+                }
+            }
+        }
     }
     
     // MARK: - Logic
@@ -605,17 +632,17 @@ struct QuestRow: View {
                 
                 if quest.subQuests[index].isCompleted {
                     hero.addXP(amount: reward)
-                    Haptics.shared.play(.light)
                 } else {
                     hero.currentXP -= reward
                     if hero.currentXP < 0 { hero.currentXP = 0 }
                 }
                 
                 if quest.subQuests.allSatisfy({ $0.isCompleted }) {
-                    quest.isCompleted = true
-                    quest.isActive = false
-                    hero.addXP(amount: 50)
-                    Haptics.shared.notify(.success)
+                    if !quest.isCompleted {
+                        quest.completedAt = Date()
+                        quest.isActive = false
+                        hero.addXP(amount: 50)
+                    }
                 }
                 try? modelContext.save()
             }
@@ -634,13 +661,11 @@ struct QuestRow: View {
                 let session = Session(taskName: quest.title, duration: elapsed)
                 modelContext.insert(session)
                 overtimeAlertShown = false
-                Haptics.shared.play(.medium)
             } else {
                 quest.lastStartedAt = Date()
                 quest.isTimerActive = true
                 quest.isActive = true
                 overtimeAlertShown = false
-                Haptics.shared.play(.light)
             }
             try? modelContext.save()
         }
@@ -666,7 +691,6 @@ struct QuestRow: View {
     private func triggerOvertimeAlert() {
         overtimeAlertShown = true
         AudioServicesPlaySystemSound(SystemSoundID(selectedSoundID))
-        Haptics.shared.notify(.warning)
         hero.burnoutLevel = min(1.0, hero.burnoutLevel + 0.1)
         try? modelContext.save()
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {

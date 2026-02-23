@@ -1,16 +1,34 @@
 import Foundation
 import UserNotifications
+import Observation
 
+@Observable
 class NotificationManager {
     static let shared = NotificationManager()
     
-    private init() {}
+    var isAuthorized = false
     
-    // MARK: - Permission
+    // Using private init to enforce singleton, but allowing overrides for testing if needed
+    private init() {
+        checkStatus()
+    }
+    
+    // MARK: - Permission Management
+    func checkStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                self.isAuthorized = (settings.authorizationStatus == .authorized)
+            }
+        }
+    }
+                                                                                                                                                                                                                                                                                              
     func requestPermission() {
         UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .badge, .sound]
         ) { granted, error in
+            DispatchQueue.main.async {
+                self.isAuthorized = granted
+            }
             if let error = error {
                 print("ForgeFlow: Notification permission error: \(error)")
             }
@@ -81,14 +99,27 @@ class NotificationManager {
         }
     }
     
-    // MARK: - Cancel
+    // MARK: - Schedule Timer Complete (Live Activity End)
+    func scheduleTimerComplete(seconds: TimeInterval, title: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Mission Complete"
+        content.body = "\(title) mission accomplished. +XP awarded."
+        content.sound = .default
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+        
+        UNUserNotificationCenter.current().add(request)
+    }
+    
+    // MARK: - Cancellation
     func cancelNotification(id: String) {
         UNUserNotificationCenter.current().removePendingNotificationRequests(
             withIdentifiers: [id]
         )
     }
     
-    func cancelAllTodoNotifications() {
+    func cancelAll() {
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
     }
 }

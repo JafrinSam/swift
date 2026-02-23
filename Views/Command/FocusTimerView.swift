@@ -3,6 +3,9 @@ import SwiftData
 import Foundation
 import AVFoundation
 import Observation
+#if false // Change to 'canImport(ActivityKit)'
+import ActivityKit
+#endif
 
 // MARK: - Timer Phase
 enum TimerPhase: String {
@@ -49,6 +52,9 @@ struct FocusTimerView: View {
     @State private var isRunning = false
     @State private var isFlowMode = false
     @State private var timer: Timer?
+#if false // Change to 'canImport(ActivityKit)'
+    @State private var currentActivity: Activity<FocusAttributes>? = nil
+#endif
     
     // MARK: - Pomodoro State
     @State private var currentPhase: TimerPhase = .idle
@@ -72,7 +78,6 @@ struct FocusTimerView: View {
     @State private var pulse: CGFloat = 1.0
     @State private var showCustomTimeSheet = false
     @State private var customMinutesInput = 25
-    @State private var showPresetPicker = true
     
     private let presets: [TimerPreset] = [
         TimerPreset(label: "25m", minutes: 25, icon: "bolt"),
@@ -225,7 +230,6 @@ struct FocusTimerView: View {
             ForEach(presets) { preset in
                 Button {
                     setDuration(preset.minutes)
-                    Haptics.shared.play(.light)
                 } label: {
                     VStack(spacing: 4) {
                         Image(systemName: preset.icon)
@@ -345,8 +349,6 @@ struct FocusTimerView: View {
                     VStack(spacing: 16) {
                         HStack {
                             Text("Duration")
-                                .font(.system(.subheadline, design: .monospaced))
-                                .foregroundStyle(.white)
                             Spacer()
                             Text("\(customMinutesInput) min")
                                 .font(.system(.title3, design: .monospaced)).bold()
@@ -410,7 +412,6 @@ struct FocusTimerView: View {
     private func toggleTimer() {
         if isRunning {
             stopTimer()
-            Haptics.shared.play(.medium)
         } else {
             if currentPhase == .idle {
                 currentPhase = .focus
@@ -418,13 +419,22 @@ struct FocusTimerView: View {
                 totalTime = timeRemaining
             }
             startTimer()
-            Haptics.shared.play(.light)
         }
     }
 
     private func startTimer() {
         isRunning = true
         withAnimation(.easeInOut(duration: 2).repeatForever()) { pulse = 1.05 }
+        
+        // Start Live Activity
+        startLiveActivity(endTime: Date().addingTimeInterval(timeRemaining))
+        
+        // Schedule notification
+        NotificationManager.shared.scheduleTimerComplete(
+            seconds: timeRemaining,
+            title: activeQuest?.title ?? "Focus Session"
+        )
+        
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             if timeRemaining > 1 {
                 timeRemaining -= 1
@@ -441,18 +451,17 @@ struct FocusTimerView: View {
         pulse = 1.0
         timer?.invalidate()
         timer = nil
+        
+        stopLiveActivity()
+        NotificationManager.shared.cancelAll()
     }
     
     private func timerCompleted() {
         stopTimer()
-        
-        // Play notification sound + haptic
         playNotificationSound()
-        Haptics.shared.notify(.success)
         
         switch currentPhase {
         case .focus:
-            // Log focus session
             let secondsSpent = totalTime
             let minutesSpent = secondsSpent / 60
             hero.totalFocusMinutes += minutesSpent
@@ -467,7 +476,6 @@ struct FocusTimerView: View {
             
             sessionCount += 1
             
-            // Decide break type
             if sessionCount >= totalSessions {
                 currentPhase = .longBreak
                 timeRemaining = TimeInterval(longBreakDuration * 60)
@@ -479,7 +487,6 @@ struct FocusTimerView: View {
                 totalTime = timeRemaining
             }
             
-            // Auto-start break after a short delay
             if autoStartBreak {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     startTimer()
@@ -489,7 +496,10 @@ struct FocusTimerView: View {
         case .shortBreak, .longBreak:
             // Break is over — transition back to focus and auto-start
             playNotificationSound()
-            Haptics.shared.notify(.warning)
+            
+            // Active Recovery: Breaks reduce burnout
+            let recoveryAmount = (currentPhase == .longBreak) ? 0.15 : 0.05
+            hero.recoverBurnout(amount: recoveryAmount)
             
             currentPhase = .focus
             timeRemaining = TimeInterval(focusDuration * 60)
@@ -510,7 +520,38 @@ struct FocusTimerView: View {
         currentPhase = .focus
         timeRemaining = TimeInterval(focusDuration * 60)
         totalTime = timeRemaining
-        Haptics.shared.play(.light)
+    }
+    
+    // MARK: - Live Activity Logic
+    
+    private func startLiveActivity(endTime: Date) {
+#if false // Change to 'canImport(ActivityKit)'
+        let attributes = FocusAttributes(missionName: activeQuest?.title ?? "Focus Session")
+        let contentState = FocusAttributes.ContentState(endTime: endTime)
+        let content = ActivityContent(state: contentState, staleDate: endTime)
+        
+        do {
+            currentActivity = try Activity<FocusAttributes>.request(
+                attributes: attributes,
+                content: content,
+                pushType: nil
+            )
+        } catch {
+            print("Error starting Live Activity: \(error.localizedDescription)")
+        }
+#endif
+    }
+    
+    private func stopLiveActivity() {
+#if false // Change to 'canImport(ActivityKit)'
+        guard let activity = currentActivity else { return }
+        let contentState = FocusAttributes.ContentState(endTime: Date())
+        
+        Task {
+            await activity.end(ActivityContent(state: contentState, staleDate: nil), dismissalPolicy: .immediate)
+        }
+        currentActivity = nil
+#endif
     }
     
     private func playNotificationSound() {
@@ -528,7 +569,6 @@ struct FocusTimerView: View {
 
     private func completeSession() {
         stopTimer()
-        
         let secondsSpent = totalTime - timeRemaining
         let minutesSpent = max(0, secondsSpent / 60)
         hero.totalFocusMinutes += minutesSpent
@@ -546,13 +586,7 @@ struct FocusTimerView: View {
             hero.addXP(amount: 50)
         }
         
-        do {
-            try modelContext.save()
-            Haptics.shared.notify(.success)
-        } catch {
-            print("ForgeFlow: Registry Error - \(error)")
-        }
-        
+        try? modelContext.save()
         resetTimer()
     }
 }
