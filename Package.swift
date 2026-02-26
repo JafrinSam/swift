@@ -8,14 +8,15 @@ import PackageDescription
 import AppleProductTypes
 
 let package = Package(
-    name: "dev energy",
+    name: "ForgeFlow",
     platforms: [
         .iOS("18.1")
     ],
     products: [
         .iOSApplication(
-            name: "dev energy",
+            name: "ForgeFlow",
             targets: ["AppModule"],
+            bundleIdentifier: "com.sam.ForgeFlow",
             teamIdentifier: "4TJJL53F39",
             displayVersion: "1.0",
             bundleVersion: "1",
@@ -32,8 +33,8 @@ let package = Package(
                 .portraitUpsideDown(.when(deviceFamilies: [.pad]))
             ],
             capabilities: [
-                .camera(purposeString: "DevQuest uses the camera to detect if you are present at your desk. No video is recorded or saved."),
-                .microphone(purposeString: "DevQuest needs microphone access to detect typing intensity (Sonic Sorcery).")
+                .camera(purposeString: "ForgeFlow uses the camera to detect if you are present at your desk. No video is recorded or saved."),
+                .microphone(purposeString: "ForgeFlow needs microphone access to detect typing intensity (Sonic Sorcery).")
             ]
         )
     ],

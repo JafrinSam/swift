@@ -3,7 +3,7 @@ import SwiftData
 import TipKit
 
 @main
-struct MyApp: App {
+struct ForgeFlowApp: App {
     init() {
         try? Tips.configure()
     }
